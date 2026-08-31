@@ -1,0 +1,21 @@
+# A minimal standalone deployment. Copy the two variables into a .env beside it.
+services:
+  duckdns:
+    image: georgegozal/duckdns-updater:1
+    container_name: duckdns
+    restart: unless-stopped
+    environment:
+      DUCKDNS_DOMAINS: ${DUCKDNS_DOMAINS:?set DUCKDNS_DOMAINS in .env}
+      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN:?set DUCKDNS_TOKEN in .env}
+    volumes:
+      # Keeps the last-success timestamp across restarts. Without it a restart
+      # resets the health window and hides a failure that was already visible.
+      - duckdns_state:/var/lib/duckdns
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  duckdns_state:
