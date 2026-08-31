@@ -4,6 +4,9 @@ Keeps a DuckDNS hostname pointed at your current public IP. One small container,
 no dependencies, and — the reason it exists — **it reports unhealthy when it
 stops working.**
 
+[`georgegozal/duckdns-updater`](https://hub.docker.com/r/georgegozal/duckdns-updater)
+· `linux/amd64` + `linux/arm64` · ~21MB · runs as uid 10001
+
 ```bash
 docker run -d --name duckdns --restart unless-stopped \
   -e DUCKDNS_DOMAINS=myhost \
@@ -131,8 +134,36 @@ Two bugs were found by writing them, both worth knowing about if you edit
 
 Build for both architectures. A plain `docker build` produces only the
 architecture of the machine you are on, and an image pushed that way will not
-start on the other:
+start on the other — worth care on a Mac, where the local Docker VM may be
+either.
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t georgegozal/duckdns-updater:1 --push .
+docker buildx build --builder multiarch --platform linux/amd64,linux/arm64 \
+  -t georgegozal/duckdns-updater:1.0.0 \
+  -t georgegozal/duckdns-updater:1 \
+  -t georgegozal/duckdns-updater:latest \
+  --push .
+```
+
+The `multiarch` builder is a one-time setup, because the default `docker` driver
+cannot build more than one platform:
+
+```bash
+docker buildx create --name multiarch --driver docker-container --bootstrap
+```
+
+Two notes for a first push:
+
+- **A `docker push` to a repository that does not exist creates it PUBLIC.** If
+  the repository should be private, create it on Docker Hub first — otherwise
+  there is a window in which anyone can pull it.
+- **Tag `1` is the one to document for users.** They get patches automatically
+  and never a breaking change; `latest` gives them the next major version
+  without asking.
+
+Verify what actually landed, rather than trusting the push output:
+
+```bash
+docker buildx imagetools inspect georgegozal/duckdns-updater:1
+IMAGE=georgegozal/duckdns-updater:1 ./test.sh
 ```
