@@ -1,0 +1,1 @@
+Keeps a DuckDNS record on your current IP — and reports unhealthy when it stops
