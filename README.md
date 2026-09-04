@@ -166,18 +166,41 @@ start on the other — worth care on a Mac, where the local Docker VM may be
 either.
 
 ```bash
-docker buildx build --builder multiarch --platform linux/amd64,linux/arm64 \
-  -t georgegozal/duckdns-updater:1.0.0 \
+docker buildx build --builder multiarch \
+  --platform linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6 \
+  -t georgegozal/duckdns-updater:1.1.1 \
   -t georgegozal/duckdns-updater:1 \
   -t georgegozal/duckdns-updater:latest \
   --push .
 ```
+
+**32-bit ARM is in that list on purpose.** Raspberry Pi OS is still shipped in a
+32-bit edition and an always-on DNS updater on an old Pi is close to the
+archetypal use for this image — `arm/v7` covers a Pi 2/3/4 or Zero 2 W running
+it, and `arm/v6` covers a Pi 1 or the original Zero. Neither costs anything
+here: the image is a shell script plus curl, so there is nothing to compile.
 
 The `multiarch` builder is a one-time setup, because the default `docker` driver
 cannot build more than one platform:
 
 ```bash
 docker buildx create --name multiarch --driver docker-container --bootstrap
+```
+
+**32-bit ARM also needs its QEMU handler registered**, and its absence does not
+look like a missing emulator — the build fails with `exec /bin/sh: exec format
+error` and exit code 255, which reads like a broken image. A Docker Desktop
+install registers `qemu-aarch64` and `qemu-i386` and *not* `qemu-arm`, so
+`arm/v7` and `arm/v6` simply cannot run until:
+
+```bash
+docker run --rm --privileged tonistiigi/binfmt --install arm
+```
+
+Check what is actually available before blaming the Dockerfile:
+
+```bash
+docker run --rm --privileged tonistiigi/binfmt   # lists "supported"
 ```
 
 Two notes for a first push:
@@ -194,4 +217,14 @@ Verify what actually landed, rather than trusting the push output:
 ```bash
 docker buildx imagetools inspect georgegozal/duckdns-updater:1
 IMAGE=georgegozal/duckdns-updater:1 ./test.sh
+```
+
+Building for a platform is not the same as running on it, so check one of the
+emulated ones end to end rather than trusting the manifest:
+
+```bash
+docker run --rm --platform linux/arm/v7 --entrypoint sh \
+  georgegozal/duckdns-updater:1 -c 'uname -m; curl --version | head -1'
+# armv7l
+# curl 8.14.1 (armv7-alpine-linux-musleabihf) ...
 ```
