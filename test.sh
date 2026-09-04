@@ -36,6 +36,25 @@ http.server.HTTPServer(('',8000), H).serve_forever()
   sleep 3
 }
 
+start_selective_mock() {  # domain to refuse
+  docker rm -f mock >/dev/null 2>&1
+  docker run -d --name mock --network $NET python:3.12-alpine python -c "
+import http.server, urllib.parse
+BAD = '$1'
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(s):
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(s.path).query)
+        asked = q.get('domains', [''])[0]
+        s.send_response(200); s.send_header('Content-Type','text/plain'); s.end_headers()
+        # DuckDNS's real behaviour: KO if ANY domain in the request is not
+        # yours. With one domain per request, only that one is refused.
+        s.wfile.write(b'KO' if BAD in asked.split(',') else b'OK')
+    def log_message(s,*a): pass
+http.server.HTTPServer(('',8000), H).serve_forever()
+" >/dev/null
+  sleep 3
+}
+
 start_updater() {  # extra docker args...
   docker rm -f updater >/dev/null 2>&1
   docker run -d --name updater --network $NET \
@@ -57,7 +76,7 @@ start_mock OK
 start_updater -e DUCKDNS_TOKEN=tok -e DUCKDNS_ENDPOINT=http://mock:8000/
 wait_health healthy 30
 check "reports healthy" healthy "$(health)"
-check "logs the success" "yes" "$([ "$(docker logs updater 2>&1 | grep -cE ' ok$')" -gt 0 ] && echo yes || echo no)"
+check "logs the success" "yes" "$([ "$(docker logs updater 2>&1 | grep -cE '^.* ok: [0-9]+ domain')" -gt 0 ] && echo yes || echo no)"
 check "never logs the token" "yes" "$([ "$(docker logs updater 2>&1 | grep -c tok)" -gt 0 ] && echo no || echo yes)"
 
 echo "── a KO response makes it UNHEALTHY (the whole point)"
@@ -65,8 +84,8 @@ start_mock KO
 start_updater -e DUCKDNS_TOKEN=tok -e DUCKDNS_ENDPOINT=http://mock:8000/
 wait_health unhealthy 40
 check "reports unhealthy" unhealthy "$(health)"
-check "explains KO" "yes" "$([ "$(docker logs updater 2>&1 | grep -ci 'refused the update')" -gt 0 ] && echo yes || echo no)"
-check "does NOT retry a KO (config error, not a blip)" "0" "$(docker logs updater 2>&1 | grep -ci 'retrying in')"
+check "explains KO" "yes" "$([ "$(docker logs updater 2>&1 | grep -ci 'REFUSED example')" -gt 0 ] && echo yes || echo no)"
+check "does NOT retry a KO (config error, not a blip)" "0" "$(docker logs updater 2>&1 | grep -ci 'retrying example')"
 check "is still running, not crashed" "true" "$(docker inspect -f '{{.State.Running}}' updater)"
 
 echo "── an unreachable endpoint retries, then goes unhealthy"
@@ -74,7 +93,7 @@ docker rm -f mock >/dev/null 2>&1
 start_updater -e DUCKDNS_TOKEN=tok -e DUCKDNS_ENDPOINT=http://mock:8000/
 wait_health unhealthy 40
 check "reports unhealthy" unhealthy "$(health)"
-check "retried before giving up" "yes" "$([ "$(docker logs updater 2>&1 | grep -ci 'retrying in')" -gt 0 ] && echo yes || echo no)"
+check "retried before giving up" "yes" "$([ "$(docker logs updater 2>&1 | grep -ci 'retrying example')" -gt 0 ] && echo yes || echo no)"
 
 echo "── a token with a trailing newline still works"
 start_mock OK
@@ -99,6 +118,32 @@ start_mock OK
 start_updater -e DUCKDNS_TOKEN=tok -e DUCKDNS_ENDPOINT=http://mock:8000/
 sleep 3
 check "uid is not 0" "10001" "$(docker exec updater id -u)"
+
+echo "── ONE bad domain does not stop the others (the reason for per-domain)"
+# Reproduces what happened for real: five domains, one no longer belonging to
+# the token, and DuckDNS answering KO for the whole batch — so DNS went
+# unrefreshed for 29 hours while every domain was individually fine but one.
+start_selective_mock gone
+docker rm -f updater >/dev/null 2>&1
+docker run -d --name updater --network $NET \
+  -e DUCKDNS_DOMAINS=alpha,gone,beta \
+  -e DUCKDNS_TOKEN=tok -e DUCKDNS_ENDPOINT=http://mock:8000/update \
+  -e INTERVAL=5 -e RETRIES=2 \
+  --health-start-period=2s --health-interval=3s --health-retries=1 \
+  "$IMAGE" >/dev/null
+wait_health healthy 30
+logs=$(docker logs updater 2>&1)
+check "the refused domain is named" "yes" \
+  "$([ "$(echo "$logs" | grep -c 'REFUSED gone')" -gt 0 ] && echo yes || echo no)"
+check "the other two still updated" "yes" \
+  "$([ "$(echo "$logs" | grep -c 'ok: 2 domain')" -gt 0 ] && echo yes || echo no)"
+check "it says which one failed" "yes" \
+  "$([ "$(echo "$logs" | grep -c 'failed: gone')" -gt 0 ] && echo yes || echo no)"
+check "stays HEALTHY — an abandoned domain is not a broken service" \
+  healthy "$(health)"
+check "the healthcheck still REPORTS the stale one" "yes" \
+  "$([ "$(docker inspect -f '{{range .State.Health.Log}}{{.Output}}{{end}}' updater | grep -cE 'stale: gone')" -gt 0 ] && echo yes || echo no)"
+check "still running" "true" "$(docker inspect -f '{{.State.Running}}' updater)"
 
 echo
 echo "$pass passed, $fail failed"

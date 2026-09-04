@@ -17,6 +17,33 @@ docker run -d --name duckdns --restart unless-stopped \
 `DUCKDNS_DOMAINS` is comma-separated and takes the subdomain only, without
 `.duckdns.org`: `myhost,another,third`.
 
+## One request per domain
+
+Each domain is updated in its **own** request. DuckDNS accepts a
+comma-separated list in one request, and this image used to send one — but it
+answers `KO` for the **whole batch** if any single domain does not belong to
+the token. So one domain you deleted at DuckDNS, or stopped wanting and left in
+`DUCKDNS_DOMAINS`, silently stopped every other domain from updating. Seen for
+real: five domains, one stale, DNS unrefreshed for 29 hours.
+
+A refused domain is now named in the log every round and takes nothing else
+down with it:
+
+```
+duckdns REFUSED gone (KO) — it does not belong to this token, or no longer
+exists. Other domains are unaffected; remove it from DUCKDNS_DOMAINS to stop
+this message
+ok: 2 domain(s) updated, failed: gone
+```
+
+**Health goes red only when NOTHING updated** — not when something did not.
+A domain left behind in the configuration is refused forever, and letting that
+turn the container red was wrong three ways: it claims the service is broken
+while it is doing its job for every other domain, it makes `compose up --wait`
+time out so the app cannot be deployed at all, and the fix is an environment
+variable, not the container. The stale domain is still reported in the health
+output — `stale: gone(never)` — it just does not decide the exit code.
+
 ## Why not three lines in a compose file
 
 The usual inline version is a `while` loop around `curl`, and it works. What it
@@ -112,7 +139,8 @@ docker build -t duckdns-updater:test .
 ```
 
 No DuckDNS token needed and no real record touched: the tests point the updater
-at a mock endpoint via `DUCKDNS_ENDPOINT` and assert on behaviour — that a `KO`
+at a mock endpoint via `DUCKDNS_ENDPOINT` (the request BASE; the query is
+always appended) and assert on behaviour — that a `KO`
 turns the container unhealthy, that a `KO` is not retried, that the token never
 appears in the logs, that a missing variable fails fast rather than looping, and
 that it runs as uid 10001.
