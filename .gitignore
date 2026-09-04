@@ -1,1 +1,23 @@
+# The real token lives here. `.env.example` is deliberately NOT ignored — it is
+# the documentation of which variables exist, and it carries no values.
 .env
+.env.*
+!.env.example
+
+# The state directory the container writes its last-success timestamps into.
+# Only appears if someone runs the scripts outside Docker.
+/var/
+last-success
+
+# test.sh drives real containers and removes them itself, but a killed run can
+# leave a log behind.
+*.log
+
+# OS and editor droppings. Committing one to a public repo is not a leak, just
+# noise that every clone then carries.
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
