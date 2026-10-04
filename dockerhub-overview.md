@@ -81,26 +81,16 @@ failures are retried with a short backoff instead of waiting a whole interval.
 
 ## compose
 
-```yaml
-services:
-  duckdns:
-    image: georgegozal/duckdns-updater:1
-    container_name: duckdns
-    restart: unless-stopped
-    environment:
-      DUCKDNS_DOMAINS: ${DUCKDNS_DOMAINS:?}
-      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN:?}
-    volumes:
-      # Keeps the last-success timestamp across restarts, so a restart does not
-      # reset the health window and hide a problem that was already showing.
-      - duckdns_state:/var/lib/duckdns
-    logging:
-      driver: json-file
-      options: { max-size: "10m", max-file: "3" }
+Clone the repo (or copy [`docker-compose.yml`](https://github.com/georgegozal/duckdns-updater/blob/main/docker-compose.yml)
+and [`env.example`](https://github.com/georgegozal/duckdns-updater/blob/main/env.example)), then:
 
-volumes:
-  duckdns_state:
+```bash
+cp env.example .env   # set DUCKDNS_DOMAINS and DUCKDNS_TOKEN
+docker compose up -d
 ```
+
+The compose file mounts a state volume so restarts do not reset the health
+window, and rotates logs. Compose reads `.env` beside the file automatically.
 
 ## Tags
 

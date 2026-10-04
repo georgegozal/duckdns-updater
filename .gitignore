@@ -1,8 +1,6 @@
-# The real token lives here. `.env.example` is deliberately NOT ignored — it is
-# the documentation of which variables exist, and it carries no values.
+# Real credentials: copy env.example to .env (Compose loads .env automatically).
 .env
 .env.*
-!.env.example
 
 # The state directory the container writes its last-success timestamps into.
 # Only appears if someone runs the scripts outside Docker.

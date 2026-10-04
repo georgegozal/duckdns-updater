@@ -81,8 +81,10 @@ while there is still time to fix it.
 | `STATE_DIR` | `/var/lib/duckdns` | Where the last-success timestamp lives |
 | `TZ` | UTC | Timezone for log timestamps |
 
+See [`env.example`](env.example) for a Compose-ready template (copy to `.env`).
+
 Whitespace is stripped from the token. A trailing newline — which a token
-pasted into an `.env` file or a secret usually keeps — otherwise produces a bare
+pasted into `.env` or a secret usually keeps — otherwise produces a bare
 `KO` with no hint about why.
 
 The public IP is never looked up. `ip=` is sent empty, so DuckDNS uses the source
@@ -110,26 +112,14 @@ failures are retried with a short backoff instead of waiting a whole interval.
 
 ## compose
 
-```yaml
-services:
-  duckdns:
-    image: georgegozal/duckdns-updater:1
-    container_name: duckdns
-    restart: unless-stopped
-    environment:
-      DUCKDNS_DOMAINS: ${DUCKDNS_DOMAINS:?}
-      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN:?}
-    volumes:
-      # Keeps the last-success timestamp across restarts, so a restart does not
-      # reset the health window and hide a problem that was already showing.
-      - duckdns_state:/var/lib/duckdns
-    logging:
-      driver: json-file
-      options: { max-size: "10m", max-file: "3" }
-
-volumes:
-  duckdns_state:
+```bash
+cp env.example .env   # set DUCKDNS_DOMAINS and DUCKDNS_TOKEN
+docker compose up -d
 ```
+
+[`docker-compose.yml`](docker-compose.yml) is a minimal standalone stack: state
+volume, log rotation, and required-variable checks. Compose loads `.env` from the
+same directory automatically.
 
 ## Tests
 
